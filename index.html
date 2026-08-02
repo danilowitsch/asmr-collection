@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASMR Video Collection</title>
+    <link rel="stylesheet" href="styles/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <header>
+        <h1><i class="fas fa-video"></i> ASMR Video Collection</h1>
+        <p class="subtitle">Manage your ASMR video bookmarks with tags and filtering</p>
+    </header>
+
+    <main class="container">
+        <!-- Add Video Modal -->
+        <div class="modal" id="addModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2><i class="fas fa-plus"></i> Add Video</h2>
+                    <button class="close-btn" id="closeModal">&times;</button>
+                </div>
+                <form id="addVideoForm">
+                    <div class="form-group">
+                        <label for="videoUrl">Video URL *</label>
+                        <input type="url" id="videoUrl" placeholder="https://www.youtube.com/watch?v=..." required>
+                        <button type="button" class="btn btn-secondary fetch-btn" id="fetchMetadata">
+                            <i class="fas fa-download"></i> Fetch Info
+                        </button>
+                    </div>
+                    <div class="form-group">
+                        <label for="videoTitle">Title *</label>
+                        <input type="text" id="videoTitle" placeholder="Video title" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="videoTags">Tags (comma separated)</label>
+                        <input type="text" id="videoTags" placeholder="barbering, massage, haircut, relaxing">
+                        <div class="suggested-tags">
+                            <span class="tag-suggestion" data-tag="barbering">barbering</span>
+                            <span class="tag-suggestion" data-tag="massage">massage</span>
+                            <span class="tag-suggestion" data-tag="haircut">haircut</span>
+                            <span class="tag-suggestion" data-tag="relaxing">relaxing</span>
+                            <span class="tag-suggestion" data-tag="scalp">scalp</span>
+                            <span class="tag-suggestion" data-tag="whispering">whispering</span>
+                            <span class="tag-suggestion" data-tag="tapping">tapping</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="videoNotes">Notes</label>
+                        <textarea id="videoNotes" placeholder="Any additional notes..."></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="cancelAdd">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Patreon Import Modal -->
+        <div class="modal" id="patreonModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2><i class="fab fa-patreon"></i> Import from Patreon</h2>
+                    <button class="close-btn" id="closePatreonModal">&times;</button>
+                </div>
+                <div class="form-group">
+                    <label for="patreonSessionId">Patreon Session ID *</label>
+                    <input type="text" id="patreonSessionId" placeholder="Enter your Patreon session_id">
+                    <small class="hint">Find this in your browser cookies when logged into Patreon</small>
+                </div>
+                
+                <!-- Import Mode Toggle -->
+                <div class="form-group patreon-mode-toggle">
+                    <label>Import Mode:</label>
+                    <div class="toggle-switch">
+                        <input type="radio" name="patreonMode" id="modeSingle" value="single" checked>
+                        <label for="modeSingle">Single Post</label>
+                        <input type="radio" name="patreonMode" id="modeMultiple" value="multiple">
+                        <label for="modeMultiple">Multiple Posts</label>
+                    </div>
+                </div>
+                
+                <!-- Single Post Mode Fields -->
+                <div class="form-group patreon-single-mode" id="singlePostFields">
+                    <label for="patreonPostUrl">Post URL *</label>
+                    <input type="url" id="patreonPostUrl" placeholder="https://www.patreon.com/creator/posts/123456">
+                </div>
+                
+                <!-- Multiple Posts Mode Fields -->
+                <div class="form-group patreon-multiple-mode" id="multiplePostsFields" style="display: none;">
+                    <label for="patreonCreator">Creator Name *</label>
+                    <input type="text" id="patreonCreator" placeholder="e.g., massagevids">
+                    <label for="patreonMaxPosts">Max Posts to Fetch</label>
+                    <select id="patreonMaxPosts">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="btn btn-primary" id="fetchPatreonContent">
+                        <i class="fas fa-download"></i> Fetch
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="cancelPatreon">Cancel</button>
+                </div>
+                <div id="patreonResults" class="patreon-results">
+                    <!-- Results will be displayed here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters Sidebar -->
+        <aside class="sidebar">
+            <div class="filter-section">
+                <h3><i class="fas fa-filter"></i> Filters</h3>
+                
+                <div class="filter-group">
+                    <label><i class="fas fa-search"></i> Search</label>
+                    <input type="text" id="searchInput" placeholder="Search by title...">
+                </div>
+
+                <div class="filter-group">
+                    <label><i class="fas fa-tags"></i> Tags</label>
+                    <div class="tag-cloud" id="allTags"></div>
+                </div>
+
+                <div class="filter-group">
+                    <label><i class="fas fa-calendar"></i> Date Added</label>
+                    <select id="dateFilter">
+                        <option value="all">All Time</option>
+                        <option value="today">Today</option>
+                        <option value="week">Last 7 Days</option>
+                        <option value="month">Last 30 Days</option>
+                        <option value="3months">Last 3 Months</option>
+                        <option value="year">Last Year</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label><i class="fas fa-calendar-check"></i> Publish Date</label>
+                    <select id="publishDateFilter">
+                        <option value="all">All Time</option>
+                        <option value="recent">Most Recent</option>
+                        <option value="oldest">Oldest First</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-secondary clear-filters" id="clearFilters">
+                    <i class="fas fa-times"></i> Clear Filters
+                </button>
+            </div>
+
+            <div class="stats">
+                <h3><i class="fas fa-chart-bar"></i> Stats</h3>
+                <p>Total Videos: <span id="totalVideos">0</span></p>
+                <p>Tags: <span id="totalTags">0</span></p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="content">
+            <div class="toolbar">
+                <button class="btn btn-primary" id="addVideoBtn">
+                    <i class="fas fa-plus"></i> Add Video
+                </button>
+                <button class="btn btn-secondary" id="importBtn">
+                    <i class="fas fa-file-import"></i> Import JSON
+                </button>
+                <button class="btn btn-secondary" id="patreonImportBtn">
+                    <i class="fab fa-patreon"></i> Import from Patreon
+                </button>
+                <button class="btn btn-secondary" id="exportBtn">
+                    <i class="fas fa-file-export"></i> Export
+                </button>
+                <div class="view-toggle">
+                    <button class="view-btn active" data-view="grid"><i class="fas fa-th"></i></button>
+                    <button class="view-btn" data-view="list"><i class="fas fa-list"></i></button>
+                </div>
+            </div>
+
+            <div class="video-grid" id="videoGrid">
+                <!-- Videos will be rendered here -->
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Loading...</p>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p><i class="fas fa-database"></i> Data saved locally in your browser</p>
+    </footer>
+
+    <script src="scripts/app.js"></script>
+</body>
+</html>
