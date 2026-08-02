@@ -1,0 +1,3 @@
+*.har
+asmr_data.json
+__pycache__/
