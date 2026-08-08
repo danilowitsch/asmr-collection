@@ -16,7 +16,7 @@ Then open http://localhost:8000 in your browser to use the app.
 from flask import Flask, request, jsonify, send_file, make_response
 from flask_cors import CORS
 import requests
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 from bs4 import BeautifulSoup
 import re
 import json
@@ -676,9 +676,64 @@ def patreon_post_iframe():
             title_tag = soup.find('meta', attrs={'property': 'og:title'})
             title_text = title_tag.get('content', '') if title_tag else ''
         
+        # Deduplicate iframes that point to the same video
+        # This handles cases where Patreon shows both an Embedly wrapper and direct iframe
+        def get_video_key(url):
+            """Extract a unique key from a video URL for deduplication."""
+            if not url:
+                return None
+            
+            # Decode URL-encoded characters for matching
+            decoded_url = url
+            try:
+                decoded_url = unquote(url)
+            except:
+                pass
+            
+            # For mediadelivery.net/bunny.net URLs, extract the UUID
+            # Direct URL: https://iframe.mediadelivery.net/play/519966/eef8245b-81f4-4bb5-b9ff-d811f2e616b2
+            # Embed URL: https://iframe.mediadelivery.net/embed/519966/eef8245b-81f4-4bb5-b9ff-d811f2e616b2
+            match = re.search(r'(?:iframe\.mediadelivery\.net|bunny\.net)/(?:embed|play)/\d+/([a-f0-9-]+)', decoded_url)
+            if match:
+                return match.group(1)
+            
+            # For Embedly URLs, extract from src parameter
+            # https://cdn.embedly.com/widgets/media.html?src=https://iframe.mediadelivery.net/embed/519966/UUID
+            if 'embedly.com' in decoded_url:
+                # Extract src parameter
+                src_match = re.search(r'src=([^&]+)', decoded_url)
+                if src_match:
+                    src_url = unquote(src_match.group(1))
+                    # Now extract UUID from the src URL
+                    uuid_match = re.search(r'(?:iframe\.mediadelivery\.net|bunny\.net)/(?:embed|play)/\d+/([a-f0-9-]+)', src_url)
+                    if uuid_match:
+                        return uuid_match.group(1)
+            
+            # For other platforms, use the URL itself
+            return url.lower()
+        
+        # Keep only unique videos, preferring direct iframes over embedly wrappers
+        seen_keys = {}
+        deduped_iframe_info = []
+        for info in iframe_info:
+            key = get_video_key(info['src'])
+            if key:
+                # Prefer direct mediadelivery iframes over embedly wrappers
+                is_direct = 'embedly.com' not in info['src']
+                if key not in seen_keys:
+                    seen_keys[key] = info
+                    deduped_iframe_info.append(info)
+                elif is_direct and 'embedly.com' in seen_keys[key]['src']:
+                    # Replace embedly with direct iframe
+                    deduped_iframe_info.remove(seen_keys[key])
+                    seen_keys[key] = info
+                    deduped_iframe_info.append(info)
+            elif not key:  # If we can't extract a key, keep it anyway
+                deduped_iframe_info.append(info)
+        
         # Separate URLs and thumbnails for backwards compatibility
-        iframe_urls = [info['src'] for info in iframe_info]
-        thumbnail_urls = [info['poster'] for info in iframe_info]
+        iframe_urls = [info['src'] for info in deduped_iframe_info]
+        thumbnail_urls = [info['poster'] for info in deduped_iframe_info]
         
         return jsonify({
             'success': True,
@@ -686,7 +741,7 @@ def patreon_post_iframe():
             'title': title_text,
             'iframes': iframe_urls,
             'thumbnails': thumbnail_urls,
-            'iframe_count': len(iframe_urls)
+            'iframe_count': len(deduped_iframe_info)
         })
         
     except Exception as e:
