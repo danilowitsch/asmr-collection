@@ -23,6 +23,14 @@ import json
 import os
 from datetime import datetime, timedelta
 
+# Playwright for handling Cloudflare-protected sites like Patreon
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    app.logger.warning("Playwright not available. Patreon scraping may fail with 403 errors.")
+
 app = Flask(__name__)
 CORS(app)  # Allow all origins for development
 
@@ -98,6 +106,64 @@ def resolve_video_url_from_link(url):
     except Exception as e:
         app.logger.warning(f"Failed to resolve video URL {url}: {e}")
         return url
+
+
+def fetch_with_playwright(url, headers=None, timeout=30000):
+    """
+    Fetch a URL using Playwright to handle Cloudflare and other JS challenges.
+    This is used for sites like Patreon that block simple requests.
+    
+    Args:
+        url: The URL to fetch
+        headers: Optional dict of headers to include
+        timeout: Timeout in milliseconds
+        
+    Returns:
+        The page HTML content as a string
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        app.logger.error("Playwright not available, cannot fetch URL with browser")
+        raise RuntimeError("Playwright is required for this request. Install with: pip install playwright && playwright install")
+    
+    from playwright.sync_api import sync_playwright
+    
+    try:
+        with sync_playwright() as p:
+            # Use firefox or chromium - firefox seems to work better with Cloudflare
+            browser = p.firefox.launch()
+            # browser = p.chromium.launch()
+            page = browser.new_page()
+            
+            # Set user agent
+            page.set_extra_http_headers({
+                'User-Agent': USER_AGENT,
+            })
+            
+            # Add any custom headers
+            if headers:
+                for key, value in headers.items():
+                    if key.upper() != 'USER-AGENT':
+                        page.set_extra_http_headers({key: value})
+            
+            # Navigate to the page
+            page.goto(url, timeout=timeout, wait_until='domcontentloaded')
+            
+            # Wait for network to be idle (no more than 2 requests for 500ms)
+            try:
+                page.wait_for_load_state('networkidle', timeout=10000)
+            except:
+                # If network idle timeout, just wait a bit more
+                page.wait_for_timeout(2000)
+            
+            # Get the page content
+            content = page.content()
+            browser.close()
+            return content
+            
+    except Exception as e:
+        app.logger.error(f"Playwright fetch failed for {url}: {e}")
+        raise
+
 
 # User-Agent to avoid blocking
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -215,15 +281,25 @@ def raw_proxy():
         if patreon_session:
             headers['Cookie'] = f'session_id={patreon_session}'
         
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
+        # For Patreon URLs, use Playwright to handle Cloudflare
+        if 'patreon.com' in parsed.netloc:
+            try:
+                content = fetch_with_playwright(url, headers=headers, timeout=30000)
+            except RuntimeError as e:
+                app.logger.warning(f"Playwright not available for Patreon URL, falling back to requests: {e}")
+                response = requests.get(url, headers=headers, timeout=15)
+                response.raise_for_status()
+                content = response.content if response.ok else response.text
+        else:
+            # For non-Patreon URLs, use regular requests (faster)
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            content = response.content if response.ok else response.text
         
         # Return raw content with CORS headers
-        content_type = response.headers.get('Content-Type', 'text/html; charset=utf-8')
-        if response.ok:
-            content = response.content
-        else:
-            content = response.text
+        content_type = 'text/html; charset=utf-8'
+        if isinstance(content, str):
+            content = content.encode('utf-8')
         html_response = make_response(content)
         html_response.headers['Content-Type'] = content_type
         html_response.headers['Access-Control-Allow-Origin'] = '*'
@@ -321,11 +397,22 @@ def proxy():
         if patreon_session:
             headers['Cookie'] = f'session_id={patreon_session}'
         
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
+        # For Patreon URLs, use Playwright to handle Cloudflare
+        if 'patreon.com' in parsed.netloc:
+            try:
+                html_content = fetch_with_playwright(url, headers=headers, timeout=30000)
+            except RuntimeError as e:
+                app.logger.warning(f"Playwright not available for Patreon URL, falling back to requests: {e}")
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()
+                html_content = response.text
+        else:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            html_content = response.text
         
         # Parse HTML for OpenGraph tags
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(html_content, 'html.parser')
         
         # Extract OpenGraph data
         og_data = {}
@@ -401,22 +488,29 @@ def patreon_post_iframe():
         if 'patreon.com' not in parsed.netloc:
             return jsonify({'error': 'URL must be a Patreon post URL'}), 400
         
-        # Build headers
-        headers = {'User-Agent': USER_AGENT}
-        
         # Get Patreon session from header
         patreon_session = request.headers.get('X-Patreon-Session')
-        if patreon_session:
-            headers['Cookie'] = f'session_id={patreon_session}'
-        else:
+        if not patreon_session:
             return jsonify({'error': 'X-Patreon-Session header is required'}), 401
         
-        # Fetch the post HTML
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
+        # Build headers for Playwright
+        headers = {
+            'User-Agent': USER_AGENT,
+            'Cookie': f'session_id={patreon_session}'
+        }
+        
+        # Fetch the post HTML using Playwright to handle Cloudflare
+        try:
+            html_content = fetch_with_playwright(url, headers=headers, timeout=30000)
+        except RuntimeError as e:
+            # Fall back to requests if Playwright is not available
+            app.logger.warning(f"Playwright not available, falling back to requests: {e}")
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            html_content = response.text
         
         # Parse HTML for iframe tags
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(html_content, 'html.parser')
         iframes = soup.find_all('iframe')
         
         # Extract iframe info (src and poster/thumbnail)
@@ -627,7 +721,10 @@ if __name__ == '__main__':
         print("\nInstalling required packages...")
         import subprocess
         import sys
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "flask", "flask-cors", "beautifulsoup4", "requests"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "flask", "flask-cors", "beautifulsoup4", "requests", "playwright"])
+        print("\nInstalling Playwright browsers...")
+        from playwright.__main__ import install
+        install()
         print("\nPackages installed! Please run the server again.")
         sys.exit(1)
     
