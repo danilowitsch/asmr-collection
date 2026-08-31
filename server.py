@@ -545,7 +545,16 @@ def patreon_post_iframe():
                             poster = f"{parsed.scheme}://{parsed.netloc}{poster if poster.startswith('/') else '/' + poster}"
                 
                 if not poster:
-                    poster = None
+                    # Try to generate thumbnail for Bunny Stream (mediadelivery.net) videos
+                    if 'mediadelivery.net' in src:
+                        # Extract UUID from Bunny Stream URL
+                        # Handles: /embed/546846/379a0e74... /embeded/546846/... or /play/546846/...
+                        bunny_match = re.search(r'(?:embed(?:ed)?|play)/\d+/([a-f0-9-]+)', src)
+                        if bunny_match:
+                            uuid = bunny_match.group(1)
+                            poster = f"https://thumbnails.mediadelivery.net/{uuid}.jpg"
+                    if not poster:
+                        poster = None
             
             iframe_info.append({
                 'src': src,
@@ -693,7 +702,7 @@ def patreon_post_iframe():
             # For mediadelivery.net/bunny.net URLs, extract the UUID
             # Direct URL: https://iframe.mediadelivery.net/play/519966/eef8245b-81f4-4bb5-b9ff-d811f2e616b2
             # Embed URL: https://iframe.mediadelivery.net/embed/519966/eef8245b-81f4-4bb5-b9ff-d811f2e616b2
-            match = re.search(r'(?:iframe\.mediadelivery\.net|bunny\.net)/(?:embed|play)/\d+/([a-f0-9-]+)', decoded_url)
+            match = re.search(r'(?:iframe\.mediadelivery\.net|bunny\.net)/(?:embed(?:ed)?|play)/\d+/([a-f0-9-]+)', decoded_url)
             if match:
                 return match.group(1)
             
@@ -705,7 +714,7 @@ def patreon_post_iframe():
                 if src_match:
                     src_url = unquote(src_match.group(1))
                     # Now extract UUID from the src URL
-                    uuid_match = re.search(r'(?:iframe\.mediadelivery\.net|bunny\.net)/(?:embed|play)/\d+/([a-f0-9-]+)', src_url)
+                    uuid_match = re.search(r'(?:iframe\.mediadelivery\.net|bunny\.net)/(?:embed(?:ed)?|play)/\d+/([a-f0-9-]+)', src_url)
                     if uuid_match:
                         return uuid_match.group(1)
             
