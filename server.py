@@ -475,6 +475,7 @@ def patreon_post_iframe():
     
     Returns JSON with iframe URLs and thumbnails found in the post.
     """
+
     url = request.args.get('url')
     if not url:
         return jsonify({'error': 'URL parameter is required'}), 400
@@ -544,20 +545,43 @@ def patreon_post_iframe():
                         if poster and not poster.startswith(('http:', 'https:')):
                             poster = f"{parsed.scheme}://{parsed.netloc}{poster if poster.startswith('/') else '/' + poster}"
                 
-                if not poster:
-                    # Try to generate thumbnail for Bunny Stream (mediadelivery.net) videos
-                    if 'mediadelivery.net' in src:
-                        # Extract UUID from Bunny Stream URL
-                        # Handles: /embed/546846/379a0e74... /embeded/546846/... or /play/546846/...
-                        bunny_match = re.search(r'(?:embed(?:ed)?|play)/\d+/([a-f0-9-]+)', src)
-                        if bunny_match:
-                            uuid = bunny_match.group(1)
-                            poster = f"https://thumbnails.mediadelivery.net/{uuid}.jpg"
-                    if not poster:
-                        poster = None
+            # If still no poster, try Embedly or Bunny Stream thumbnail extraction
+
+            if not poster:
+                # Try to extract thumbnail from Embedly wrapper URLs first
+                if 'embedly.com' in src:
+
+                    # Extract image parameter from Embedly URL
+                    # Example: https://cdn.embedly.com/widgets/media.html?src=...&image=https://...jpg
+                    image_match = re.search(r'image=([^&]+)', src)
+                    if image_match:
+
+                        poster = unquote(image_match.group(1))
+                # Try to generate thumbnail for direct Bunny Stream (mediadelivery.net) videos
+                elif 'mediadelivery.net' in src:
+                    # Extract UUID from Bunny Stream URL
+                    # Handles: /embed/546846/379a0e74... /embeded/546846/... or /play/546846/...
+                    bunny_match = re.search(r'(?:embed(?:ed)?|play)/\d+/([a-f0-9-]+)', src)
+                    if bunny_match:
+                        uuid = bunny_match.group(1)
+                        poster = f"https://thumbnails.mediadelivery.net/{uuid}.jpg"
+            
+            if not poster:
+                poster = None
+            
+            # Resolve Embedly wrapper URLs to their inner video URL
+            resolved_src = src
+            if 'embedly.com' in src:
+                # Extract the actual video URL from Embedly src parameter
+                src_match = re.search(r'src=([^&]+)', src)
+                if src_match:
+                    inner_src = unquote(src_match.group(1))
+                    # Verify it's a valid video URL before replacing
+                    if inner_src and inner_src.startswith('http') and 'mediadelivery.net' in inner_src:
+                        resolved_src = inner_src
             
             iframe_info.append({
-                'src': src,
+                'src': resolved_src,
                 'poster': poster
             })
         
