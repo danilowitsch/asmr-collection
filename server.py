@@ -531,12 +531,26 @@ def patreon_post_iframe():
             response.raise_for_status()
             html_content = response.text
         
-        # Parse HTML for iframe tags
+        # Parse HTML for iframe tags and video links
         soup = BeautifulSoup(html_content, 'html.parser')
         iframes = soup.find_all('iframe')
         
+        # Also look for direct video links in <a> tags (for posts that link to videos directly)
+        video_link_selectors = [
+            'a[href*="mediadelivery.net"]',
+            'a[href*="bunny.net"]',
+            'a[href*="videodelivery.net"]',
+            'a[href*="iframe.mediadelivery.net"]',
+            'a[href*="player.mediadelivery.net"]',
+        ]
+        video_links = []
+        for selector in video_link_selectors:
+            video_links.extend(soup.select(selector))
+        
         # Extract iframe info (src and poster/thumbnail)
         iframe_info = []
+        
+        # Process iframe tags
         for iframe in iframes:
             src = iframe.get('src', '')
             if not src or not src.strip():
@@ -603,6 +617,42 @@ def patreon_post_iframe():
             
             iframe_info.append({
                 'src': resolved_src,
+                'poster': poster
+            })
+        
+        # Process video links from <a> tags
+        for link in video_links:
+            href = link.get('href', '')
+            if not href or not href.strip():
+                continue
+            
+            # Make relative URLs absolute
+            if not href.startswith(('http:', 'https:')):
+                href = f"{parsed.scheme}://{parsed.netloc}{href if href.startswith('/') else '/' + href}"
+            
+            # Try to find a thumbnail near this link
+            poster = None
+            parent = link.parent
+            if parent:
+                imgs = parent.find_all('img', src=True)
+                if imgs:
+                    poster = imgs[0].get('src', '').strip()
+                    if poster and not poster.startswith(('http:', 'https:')):
+                        poster = f"{parsed.scheme}://{parsed.netloc}{poster if poster.startswith('/') else '/' + poster}"
+            
+            # If still no poster, try Bunny Stream thumbnail extraction
+            if not poster:
+                if 'mediadelivery.net' in href:
+                    bunny_match = re.search(r'(?:embed(?:ed)?|play)/\d+/([a-f0-9-]+)', href)
+                    if bunny_match:
+                        uuid = bunny_match.group(1)
+                        poster = f"https://thumbnails.mediadelivery.net/{uuid}.jpg"
+            
+            if not poster:
+                poster = None
+            
+            iframe_info.append({
+                'src': href,
                 'poster': poster
             })
         
