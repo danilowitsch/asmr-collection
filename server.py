@@ -43,6 +43,27 @@ logger = logging.getLogger(__name__)
 DATA_FILE = 'asmr_data.json'
 
 
+def normalize_bunny_url(url):
+    """
+    Normalize Bunny Stream (mediadelivery.net) URLs from /embed/ to /play/ format.
+    This matches the behavior used when manually adding entries.
+    """
+    if not url:
+        return url
+    
+    try:
+        parsed = urlparse(url)
+        if 'mediadelivery.net' in parsed.netloc or 'bunny.net' in parsed.netloc:
+            # Replace /embed/ or /embeded/ with /play/ in the path
+            path = parsed.path.replace('/embed/', '/play/').replace('/embeded/', '/play/')
+            # Remove query parameters
+            path = path.split('?')[0]
+            return f"{parsed.scheme}://{parsed.netloc}{path}"
+        return url
+    except:
+        return url
+
+
 def fetch_opengraph_metadata(url):
     """
     Fetch OpenGraph metadata from a URL.
@@ -765,7 +786,8 @@ def patreon_post_iframe():
                 deduped_iframe_info.append(info)
         
         # Separate URLs and thumbnails for backwards compatibility
-        iframe_urls = [info['src'] for info in deduped_iframe_info]
+        # Normalize Bunny Stream URLs from /embed/ to /play/ format
+        iframe_urls = [normalize_bunny_url(info['src']) for info in deduped_iframe_info]
         thumbnail_urls = [info['poster'] for info in deduped_iframe_info]
         
         return jsonify({
