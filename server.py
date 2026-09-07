@@ -302,17 +302,34 @@ def raw_proxy():
         if patreon_session:
             headers['Cookie'] = f'session_id={patreon_session}'
         
-        # For Patreon URLs, use Playwright to handle Cloudflare
-        if 'patreon.com' in parsed.netloc:
+        # Pass through any cookies from the request for authenticated fetching
+        # This allows passing auth cookies for Boosty, Patreon (via X-Patreon-Session), etc.
+        if request.headers.get('Cookie'):
+            if 'Cookie' in headers:
+                headers['Cookie'] += '; ' + request.headers.get('Cookie')
+            else:
+                headers['Cookie'] = request.headers.get('Cookie')
+        # Also check for cookies in the request object
+        if request.cookies:
+            for cookie_name, cookie_value in request.cookies.items():
+                if cookie_name == 'patreon_session':
+                    continue  # Already handled above
+                if 'Cookie' in headers:
+                    headers['Cookie'] += f'; {cookie_name}={cookie_value}'
+                else:
+                    headers['Cookie'] = f'{cookie_name}={cookie_value}'
+        
+        # For Patreon and Boosty URLs, use Playwright to handle dynamic content
+        if 'patreon.com' in parsed.netloc or 'boosty.to' in parsed.netloc:
             try:
                 content = fetch_with_playwright(url, headers=headers, timeout=30000)
             except RuntimeError as e:
-                app.logger.warning(f"Playwright not available for Patreon URL, falling back to requests: {e}")
+                app.logger.warning(f"Playwright not available for {parsed.netloc} URL, falling back to requests: {e}")
                 response = requests.get(url, headers=headers, timeout=15)
                 response.raise_for_status()
                 content = response.content if response.ok else response.text
         else:
-            # For non-Patreon URLs, use regular requests (faster)
+            # For non-Patreon/Boosty URLs, use regular requests (faster)
             response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
             content = response.content if response.ok else response.text
