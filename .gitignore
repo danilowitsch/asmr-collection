@@ -1,3 +1,4 @@
 *.har
 asmr_data.json
 __pycache__/
+server.log

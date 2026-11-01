@@ -16,7 +16,7 @@ Then open http://localhost:8000 in your browser to use the app.
 from flask import Flask, request, jsonify, send_file, make_response
 from flask_cors import CORS
 import requests
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, urljoin
 from bs4 import BeautifulSoup
 import re
 import json
@@ -29,7 +29,8 @@ try:
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
-    app.logger.warning("Playwright not available. Patreon scraping may fail with 403 errors.")
+    # app/logger are defined below, so use print here to keep the module importable
+    print("Warning: Playwright not available. Patreon scraping may fail with 403 errors.")
 
 app = Flask(__name__)
 CORS(app)  # Allow all origins for development
@@ -721,7 +722,11 @@ def patreon_post_iframe():
             href = a_tag['href']
             if not href or href.startswith('javascript:') or href.startswith('#'):
                 continue
-                
+
+            # Resolve relative links (e.g. /Creator/posts/...) against the post URL
+            if not href.startswith(('http:', 'https:')):
+                href = urljoin(url, href)
+
             # Check if it's a known video platform
             is_video_platform = any(platform in href.lower() for platform in video_platforms)
             # Check if it's a direct video file URL

@@ -241,6 +241,24 @@ const SUGGESTED_TAGS = ['barbering', 'massage', ...];
 
 All data is stored **locally in your browser**. No data is sent to any external servers (except for fetching metadata from video platforms when you explicitly add a video).
 
+## Development & CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push/PR to `master`:
+
+- **Python server** - compiles all Python sources and runs a smoke test (`scripts/smoke_test.py`) that exercises the API endpoints via Flask's test client (no network needed)
+- **Data validation** - `scripts/validate_data.py` checks that `asmr_data.json` is valid JSON with unique ids/urls and well-formed entries
+- **Frontend** - syntax-checks `scripts/app.js` with `node --check`
+
+Run the same checks locally:
+
+```bash
+pip install -r requirements.txt
+python -m py_compile server.py scripts/*.py
+python scripts/smoke_test.py
+python scripts/validate_data.py asmr_data.json
+node --check scripts/app.js
+```
+
 ## License
 
 This project is free to use for personal purposes. Feel free to customize it for your own ASMR video collection!
