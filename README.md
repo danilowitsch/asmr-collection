@@ -241,12 +241,14 @@ const SUGGESTED_TAGS = ['barbering', 'massage', ...];
 
 All data is stored **locally in your browser**. No data is sent to any external servers (except for fetching metadata from video platforms when you explicitly add a video).
 
+The server-side data file `asmr_data.json` is personal data and is intentionally **untracked**: it is listed in `.gitignore` and removed from the repository. Never commit it.
+
 ## Development & CI
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push/PR to `master`:
 
 - **Python server** - compiles all Python sources and runs a smoke test (`scripts/smoke_test.py`) that exercises the API endpoints via Flask's test client (no network needed)
-- **Data validation** - `scripts/validate_data.py` checks that `asmr_data.json` is valid JSON with unique ids/urls and well-formed entries
+- **Data validation** - `scripts/validate_data.py` checks `asmr_data.json` when present (the file is untracked personal data, so CI skips it when absent): valid JSON, unique ids/urls, well-formed entries
 - **Frontend** - syntax-checks `scripts/app.js` with `node --check`
 
 Run the same checks locally:

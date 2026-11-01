@@ -41,8 +41,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Validate data file structure
-        run: python scripts/validate_data.py asmr_data.json
+      - name: Validate data file structure (if present)
+        run: |
+          if [ -f asmr_data.json ]; then
+            python scripts/validate_data.py asmr_data.json
+          else
+            echo "asmr_data.json is untracked (personal data) - skipping validation"
+          fi
 
   frontend:
     name: Frontend syntax check
